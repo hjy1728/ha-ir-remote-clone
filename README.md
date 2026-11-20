@@ -440,15 +440,6 @@ target:
 
 ---
 
-## 安全与隐私
-
-上传到公开仓库前请注意：
-
-- `zhcgs-ota-bridge-ir.yaml` 中 API encryption key 是硬编码的，**公开前请移入 `secrets.yaml` 或替换为占位符**；
-- Wi-Fi 密码、OTA 密码均通过 `!secret` 引用，需确保 `secrets.yaml` 不被提交（见 `.gitignore`）；
-- 本仓库不含任何个人文档；如你从桌面整体打包，请排除 `承诺书.doc`、`劳动合同*.docx`、`紫铜垫圈试样.pdf`、`api.rtf` 等私人文件。
-
----
 
 ## 许可
 
