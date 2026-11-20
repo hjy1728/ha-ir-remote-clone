@@ -1,0 +1,428 @@
+# ============================================================
+# ESP32-S3 SuperMini 家庭综合传感器 + 红外收发（含 NEC 自动识别）
+# 基于原 zhcgs-ota-bridge 配置，新增红外学习所需触发器与服务
+# 注意：本文件含 API Key / WiFi 密码引用，请勿提交到公开仓库
+# ============================================================
+
+esphome:
+  name: zhcgs-ota-bridge
+  friendly_name: esp32 s3 supermini 家庭综合传感器
+  on_boot:
+    - light.turn_on:
+        id: status_light
+        brightness: 20%
+        red: 0%
+        green: 100%
+        blue: 0%
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: esp-idf
+  flash_size: 4MB
+
+psram:
+  mode: quad        # 2MB PSRAM 必须用 quad（8/16MB 才用 octal）
+  speed: 80MHz
+
+# 关键：日志输出重定向到 USB CDC，把 UART0 (GPIO43/44) 让给 LD2410C
+logger:
+  hardware_uart: USB_CDC
+
+globals:
+  - id: ha_light_shown
+    type: bool
+    initial_value: 'false'
+  - id: ir_pronto_out
+    type: std::string
+    initial_value: '""'
+  - id: ir_repeat_count
+    type: int
+    initial_value: '2'
+  - id: ir_pulse_count
+    type: int
+    initial_value: '0'
+
+api:
+  encryption:
+    key: "eCXFWiM2KdArHyHVE2+iDuFvWr8Pvdx7o9/zV5dvXWg="
+  on_client_connected:
+    - if:
+        condition:
+          and:
+            - lambda: 'return (0 == client_info.find("Home Assistant "));'
+            - lambda: 'return !id(ha_light_shown);'
+        then:
+          - globals.set:
+              id: ha_light_shown
+              value: 'true'
+          - light.turn_on:
+              id: status_light
+              brightness: 40%
+              red: 0%
+              green: 0%
+              blue: 100%
+          - delay: 60s
+          - light.turn_off: status_light
+  # 新增：红外发射服务（供 HA 集成调用）
+  actions:
+    - action: send_raw_ir
+      variables:
+        code_str: string
+      then:
+        - remote_transmitter.transmit_raw:
+            transmitter_id: remote_tx
+            code: !lambda |-
+              std::vector<int32_t> data;
+              size_t start = 0;
+              while (start <= code_str.size()) {
+                size_t pos = code_str.find(',', start);
+                std::string part = code_str.substr(start, pos - start);
+                if (!part.empty()) data.push_back((int32_t) std::stoi(part));
+                if (pos == std::string::npos) break;
+                start = pos + 1;
+              }
+              return data;
+
+    - action: send_nec_ir
+      variables:
+        address: int
+        command: int
+      then:
+        - remote_transmitter.transmit_nec:
+            transmitter_id: remote_tx
+            address: !lambda 'return (uint16_t) address;'
+            command: !lambda 'return (uint8_t) command;'
+
+    - action: send_pronto_ir
+      variables:
+        code_str: string
+        repeats: int
+      then:
+        # 完整波形已在 code_str 内（含所有重复帧和结束标记），原样发一次即可。
+        # repeats 参数保留仅为兼容调用方，不再用于重复发射。
+        - remote_transmitter.transmit_pronto:
+            transmitter_id: remote_tx
+            data: !lambda 'return code_str;'
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+    on_begin:
+      then:
+        - light.turn_on:
+            id: status_light
+            brightness: 40%
+            red: 40%
+            green: 0%
+            blue: 0%
+            transition_length: 0s
+        - lambda: "id(status_light).loop();"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Esp32-S3-Whitescreen"
+    password: !secret fallback_wifi_password
+
+captive_portal:
+
+web_server:
+  port: 80
+
+# ============ I2C 总线 ============
+i2c:
+  sda: GPIO8
+  scl: GPIO9
+  scan: true
+
+# ============ UART（LD2410C + TVOC-301） ============
+uart:
+  - id: ld2410_uart
+    tx_pin: GPIO43    # 板上丝印 TX
+    rx_pin: GPIO44    # 板上丝印 RX
+    baud_rate: 256000
+    parity: NONE
+    stop_bits: 1
+
+  - id: tvoc_uart
+    rx_pin: GPIO5     # TVOC-301 TX（实测 5V，必须分压）
+    tx_pin: GPIO6
+    baud_rate: 9600
+    parity: NONE
+    stop_bits: 1
+
+ld2410:
+  uart_id: ld2410_uart
+
+# ============ 红外接收：去重后直接转 pronto ============
+remote_receiver:
+  pin:
+    number: GPIO10
+    inverted: true    # HX-M121 输出低电平有效
+  dump: all
+  # 投影遥控两帧间隔约 20ms，默认 idle 10ms 会把完整码拆成碎片。
+  # 加大到 25ms 让整帧被完整捕获（HA 官方 Gree 集成同样这样处理）。
+  idle: 25ms
+  # 通用方案：保留完整原始波形（所有重复帧 + 结束标记），一个 word 都不删。
+  # 各协议结束标记/帧结构不同，只有原样保留、原样发射才能通用，无需按设备设规则。
+  on_raw:
+    - lambda: |-
+        if (x.size() < 4) return;
+        std::vector<int32_t> vals = x;
+        // 1) 过滤碎片：引导头被单独切开或自收自发只有 1~2 对。
+        //    真实遥控码单帧至少 18 对（36 word），直接用 word 数判断。
+        if (vals.size() < 20) return;
+        // 2) 数帧数，仅用于显示，不用于截断。
+        int frames = 1;
+        for (size_t i = 1; i + 1 < vals.size(); i++) {
+          if (vals[i] < -5000 && vals[i + 1] > 1500 && vals[i + 1] < 6000) {
+            frames++;
+          }
+        }
+        id(ir_repeat_count) = frames;
+        // 3) 38kHz pronto：1 word ≈ 26us。不删结尾静默、不截断重复帧。
+        char buf[16];
+        std::string out = "0000 006D";
+        size_t count = 0;
+        for (size_t i = 0; i < vals.size(); i++) {
+          int32_t a = vals[i] < 0 ? -vals[i] : vals[i];
+          int w = (int) (a / 26.0 + 0.5);
+          if (w < 1) w = 1;
+          snprintf(buf, sizeof(buf), "%04X", (unsigned int) w);
+          out += " ";
+          out += buf;
+          count++;
+        }
+        // 4) word 数必须为偶数，否则 ESPHome 报 Inconsistent data
+        if (count % 2) {
+          out.erase(out.size() - 5);
+          count--;
+        }
+        char hdr[16];
+        snprintf(hdr, sizeof(hdr), " %04X 0000", (unsigned int) (count / 2));
+        out.insert(9, hdr);
+        id(ir_pronto_out) = out;
+        int byte_count = (int) count * 2;
+        id(ir_pulse_count) = byte_count;
+        ESP_LOGI("ir_rx", "字节数=%d 帧数=%d", byte_count, frames);
+        // text_sensor 只发布纯 pronto（state 255 字符上限会被 HA 截断，显示无妨）
+        id(last_ir_code).publish_state(out);
+    - homeassistant.action:
+        action: ir_learn.receive_code
+        data:
+          code: !lambda 'return "pronto:" + id(ir_pronto_out);'
+          repeats: !lambda 'return std::to_string(id(ir_repeat_count));'
+          pulses: !lambda 'return std::to_string(id(ir_pulse_count));'
+
+
+remote_transmitter:
+  id: remote_tx
+  pin: GPIO11
+  carrier_duty_percent: 50%
+
+# IR/RF Proxy：让 HA 直接发送 raw 时序数组（不受 255 字符/字符串解析限制）
+infrared:
+  - platform: ir_rf_proxy
+    name: "IR Bridge TX"
+    remote_transmitter_id: remote_tx
+
+# 新增：最近红外码文本传感器（HA 集成监听此实体）
+text_sensor:
+  - platform: template
+    id: last_ir_code
+    name: "最近红外码 IRCode"
+
+# ============ 板载 RGB 状态灯 ============
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_light
+    chipset: WS2812
+    pin: GPIO48
+    num_leds: 1
+    rgb_order: GRB
+    name: "WS2812B Light"
+    restore_mode: ALWAYS_OFF
+    use_dma: true
+    use_psram: true
+
+# ============ 传感器 ============
+sensor:
+  - platform: bh1750
+    name: "光照度 Lux"
+    address: 0x23
+    update_interval: 10s
+
+  - platform: aht10
+    variant: AHT20
+    temperature:
+      name: "温度 Temp"
+    humidity:
+      name: "湿度 Humi"
+    update_interval: 10s
+
+  - platform: bmp280_i2c
+    address: 0x77
+    temperature:
+      name: "温度 Temp-BMP280"
+      internal: true
+    pressure:
+      name: "气压 Press"
+    update_interval: 60s
+
+  - platform: scd4x
+    co2:
+      name: "CO2"
+    temperature:
+      name: "温度 Temp-SCD41"
+      internal: true
+    humidity:
+      name: "湿度 Humi-SCD41"
+      internal: true
+    update_interval: 60s
+    automatic_self_calibration: true
+
+  - platform: template
+    id: tvoc_301_value
+    name: "TVOC 三合一"
+    unit_of_measurement: "mg/m³"
+    accuracy_decimals: 3
+    state_class: measurement
+    update_interval: never
+
+  - platform: template
+    id: hcho_301_value
+    name: "甲醛 HCHO"
+    unit_of_measurement: "mg/m³"
+    accuracy_decimals: 3
+    state_class: measurement
+    update_interval: never
+
+  - platform: template
+    id: co2_301_value
+    name: "CO2 三合一"
+    unit_of_measurement: "ppm"
+    accuracy_decimals: 0
+    device_class: carbon_dioxide
+    state_class: measurement
+    update_interval: never
+
+# ============ TVOC-301 帧解析 ============
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          static uint8_t buf[9];
+          static uint8_t idx = 0;
+          while (id(tvoc_uart).available() > 0) {
+            uint8_t b;
+            if (!id(tvoc_uart).read_byte(&b)) continue;
+            if (idx == 0) {
+              if (b == 0x2C) buf[idx++] = b;
+            } else if (idx == 1) {
+              if (b == 0xE4) buf[idx++] = b;
+              else if (b != 0x2C) idx = 0;
+            } else {
+              buf[idx++] = b;
+              if (idx == 9) {
+                idx = 0;
+                uint8_t sum = 0;
+                for (uint8_t i = 0; i < 8; i++) sum += buf[i];
+                if (sum == buf[8]) {
+                  uint16_t raw_tvoc = (uint16_t(buf[2]) << 8) | buf[3];
+                  uint16_t raw_hcho = (uint16_t(buf[4]) << 8) | buf[5];
+                  uint16_t raw_co2  = (uint16_t(buf[6]) << 8) | buf[7];
+                  id(tvoc_301_value).publish_state(raw_tvoc * 0.001f);
+                  id(hcho_301_value).publish_state(raw_hcho * 0.001f);
+                  id(co2_301_value).publish_state(raw_co2);
+                }
+              }
+            }
+          }
+
+# ============ 二进制传感器 ============
+binary_sensor:
+  - platform: ld2410
+    has_target:
+      name: "有人在 Presence"
+      device_class: occupancy
+    has_moving_target:
+      name: "活动目标 Motion"
+      device_class: motion
+    has_still_target:
+      name: "静止目标 Still"
+
+  - platform: gpio
+    pin: GPIO4
+    name: "PIR 人体动作"
+    device_class: motion
+    filters:
+      - delayed_off: 2s
+
+# ============ LD2410C 可调参数 ============
+number:
+  - platform: ld2410
+    timeout:
+      name: "存在保持 Timeout"
+    max_move_distance_gate:
+      name: "最大移动距离 Move-Gate"
+    max_still_distance_gate:
+      name: "最大静止距离 Still-Gate"
+
+switch:
+  - platform: ld2410
+    engineering_mode:
+      name: "工程模式 EngMode"
+
+button:
+  - platform: template
+    name: "戴森电源 Power"
+    on_press:
+      - remote_transmitter.transmit_pronto:
+          transmitter_id: remote_tx
+          data: "0000 006D 0017 0000 0055 001C 001D 001C 001D 001B 001D 001B 001D 0037 001D 001B 001C 001C 001C 001D 001B 001D 001B 0038 001B 001D 001C 001D 001B 001D 001B 001C 001C 001C 001C 001C 001C 001D 001B 001D 001B 0039 001B 001D 001B 0039 001B 0039 001B 0181"
+          repeat:
+            times: 2
+            wait_time: 45ms
+
+  - platform: template
+    name: "戴森风速加 SpeedUp"
+    on_press:
+      - remote_transmitter.transmit_pronto:
+          transmitter_id: remote_tx
+          data: "0000 006D 0017 0000 003C 001C 001D 001B 001D 001B 001E 001B 001E 0036 001E 001B 001D 001B 001C 001C 001C 001D 001B 0039 001B 001D 001B 0039 001B 001D 001C 0038 001B 001D 001B 0039 001B 0039 001B 0039 001B 001D 001C 0038 001B 001D 001C 0038 001B 0181"
+          repeat:
+            times: 2
+            wait_time: 45ms
+
+  - platform: template
+    name: "戴森风速减 SpeedDown"
+    on_press:
+      - remote_transmitter.transmit_pronto:
+          transmitter_id: remote_tx
+          data: "0000 006D 0017 0000 0054 001D 001B 001D 001D 001B 001C 001C 001C 0038 001D 001B 001C 001C 001C 001D 001B 001D 001B 0039 001B 001D 001B 0039 001B 001D 001B 0039 001B 0038 001C 001D 001B 001D 001B 0039 001B 001D 001B 001D 001B 0039 001B 001D 001B 0181"
+          repeat:
+            times: 2
+            wait_time: 45ms
+
+  - platform: template
+    name: "戴森摇头 Oscillate"
+    on_press:
+      - remote_transmitter.transmit_pronto:
+          transmitter_id: remote_tx
+          data: "0000 006D 0017 0000 003D 001A 001B 001D 001D 001B 001C 001C 001D 0037 001D 001B 001C 001C 001C 001C 001C 001D 001B 0039 001B 001D 001B 001D 001B 0039 001B 0039 001B 001D 001B 001D 001B 0039 001B 0039 001B 001D 001B 0039 001B 001D 001B 0039 001B 0181"
+          repeat:
+            times: 2
+            wait_time: 45ms
+
+  - platform: template
+    name: "戴森定时 Timer"
+    on_press:
+      - remote_transmitter.transmit_pronto:
+          transmitter_id: remote_tx
+          data: "0000 006D 0017 0000 0055 001C 001B 001D 001C 001C 001D 001B 001C 0037 001C 001C 001C 001D 001D 001C 001B 001D 001C 0039 001B 001E 001B 001D 001B 0039 001B 0039 001B 003A 001B 001D 001C 001D 001B 001D 001B 0039 001B 0039 001B 0038 001C 001C 001C 0181"
+          repeat:
+            times: 2
+            wait_time: 45ms

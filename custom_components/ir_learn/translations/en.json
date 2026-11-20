@@ -1,0 +1,114 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "IR Learn",
+        "description": "Connect to an existing ESPHome IR receiver/transmitter node.",
+        "data": {
+          "esphome_node": "ESPHome node name (e.g. ir_controller)",
+          "code_sensor": "IR code text sensor",
+          "protocol": "Remote protocol"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This node is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Manage IR buttons",
+        "description": "Choose an action",
+        "menu_options": {
+          "add_button": "Add a button",
+          "delete_button": "Delete a button",
+          "settings": "Transmitter settings"
+        }
+      },
+      "add_button": {
+        "title": "Add a button",
+        "description": "The new button becomes the learning target. Turn on Learning mode and press the remote key.",
+        "data": {
+          "name": "Button name"
+        }
+      },
+      "delete_button": {
+        "title": "Delete a button",
+        "data": {
+          "name": "Select button"
+        }
+      },
+      "settings": {
+        "title": "Transmitter settings",
+        "data": {
+          "esphome_node": "ESPHome node name",
+          "code_sensor": "IR code text sensor",
+          "protocol": "Remote protocol"
+        }
+      }
+    },
+    "error": {
+      "empty_name": "Name cannot be empty",
+      "exists": "This button already exists"
+    },
+    "abort": {
+      "no_buttons": "No buttons to delete",
+      "not_found": "Button not found"
+    }
+  },
+  "services": {
+    "add_button": {
+      "name": "Add button",
+      "description": "Create an empty button and set it as the learning target.",
+      "fields": {
+        "name": {
+          "name": "Button name",
+          "description": "For example: TV-Power"
+        },
+        "config_entry_id": {
+          "name": "Integration instance",
+          "description": "Specify when multiple instances exist"
+        }
+      }
+    },
+    "delete_button": {
+      "name": "Delete button",
+      "description": "Delete a configured button by name.",
+      "fields": {
+        "name": {
+          "name": "Button name",
+          "description": "For example: TV-Power"
+        },
+        "config_entry_id": {
+          "name": "Integration instance",
+          "description": "Specify when multiple instances exist"
+        }
+      }
+    },
+    "send_button": {
+      "name": "Send button",
+      "description": "Transmit the learned IR code by button name.",
+      "fields": {
+        "name": {
+          "name": "Button name",
+          "description": "For example: TV-Power"
+        },
+        "config_entry_id": {
+          "name": "Integration instance",
+          "description": "Specify when multiple instances exist"
+        }
+      }
+    },
+    "clear_buffer": {
+      "name": "Clear captured code",
+      "description": "Discard the code captured but not yet saved.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Integration instance",
+          "description": "Specify when multiple instances exist"
+        }
+      }
+    }
+  }
+}

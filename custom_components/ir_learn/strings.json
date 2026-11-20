@@ -1,0 +1,114 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "红外学习按键",
+        "description": "连接到已有的 ESPHome 红外接收/发射节点。",
+        "data": {
+          "esphome_node": "ESPHome 节点名称（如 ir_controller）",
+          "code_sensor": "红外码文本传感器",
+          "protocol": "遥控协议"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "该节点已配置"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "管理红外按键",
+        "description": "选择要进行的操作",
+        "menu_options": {
+          "add_button": "添加按键",
+          "delete_button": "删除按键",
+          "settings": "发射设置"
+        }
+      },
+      "add_button": {
+        "title": "添加按键",
+        "description": "添加后会自动设为学习目标，然后打开“学习模式”并按遥控器按键。",
+        "data": {
+          "name": "按键名称"
+        }
+      },
+      "delete_button": {
+        "title": "删除按键",
+        "data": {
+          "name": "选择按键"
+        }
+      },
+      "settings": {
+        "title": "发射设置",
+        "data": {
+          "esphome_node": "ESPHome 节点名称",
+          "code_sensor": "红外码文本传感器",
+          "protocol": "遥控协议"
+        }
+      }
+    },
+    "error": {
+      "empty_name": "名称不能为空",
+      "exists": "该按键已存在"
+    },
+    "abort": {
+      "no_buttons": "还没有可删除的按键",
+      "not_found": "按键不存在"
+    }
+  },
+  "services": {
+    "add_button": {
+      "name": "添加按键",
+      "description": "新建一个空按键，并自动设为学习目标。",
+      "fields": {
+        "name": {
+          "name": "按键名称",
+          "description": "例如：电视-电源"
+        },
+        "config_entry_id": {
+          "name": "集成实例",
+          "description": "存在多个实例时指定"
+        }
+      }
+    },
+    "delete_button": {
+      "name": "删除按键",
+      "description": "按名称删除一个已配置的按键。",
+      "fields": {
+        "name": {
+          "name": "按键名称",
+          "description": "例如：电视-电源"
+        },
+        "config_entry_id": {
+          "name": "集成实例",
+          "description": "存在多个实例时指定"
+        }
+      }
+    },
+    "send_button": {
+      "name": "发送按键",
+      "description": "按名称发射已学习的红外码。",
+      "fields": {
+        "name": {
+          "name": "按键名称",
+          "description": "例如：电视-电源"
+        },
+        "config_entry_id": {
+          "name": "集成实例",
+          "description": "存在多个实例时指定"
+        }
+      }
+    },
+    "clear_buffer": {
+      "name": "清空暂存码",
+      "description": "丢弃当前抓取但尚未保存的红外码。",
+      "fields": {
+        "config_entry_id": {
+          "name": "集成实例",
+          "description": "存在多个实例时指定"
+        }
+      }
+    }
+  }
+}
