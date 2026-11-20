@@ -46,7 +46,7 @@ globals:
 
 api:
   encryption:
-    key: "eCXFWiM2KdArHyHVE2+iDuFvWr8Pvdx7o9/zV5dvXWg="
+    key:  !secret api_encryption_key  
   on_client_connected:
     - if:
         condition:
