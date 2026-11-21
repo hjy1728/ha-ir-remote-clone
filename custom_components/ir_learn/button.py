@@ -85,6 +85,11 @@ class IRSendButton(IREntity, ButtonEntity):
     async def async_press(self) -> None:
         await self.manager.async_send(self._button["name"])
 
+    async def _async_self_remove(self) -> None:
+        result = self.async_remove()
+        if result is not None:
+            await result
+
     @callback
     def _handle_update(self) -> None:
         current = next(
@@ -92,7 +97,7 @@ class IRSendButton(IREntity, ButtonEntity):
             None,
         )
         if current is None:
-            self.hass.async_create_task(self.async_remove())
+            self.hass.async_create_task(self._async_self_remove())
             return
         self._button = current
         self.async_write_ha_state()

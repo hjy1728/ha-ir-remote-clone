@@ -21,22 +21,23 @@
         "title": "Manage IR buttons",
         "description": "Choose an action",
         "menu_options": {
-          "add_button": "Add a button",
-          "delete_button": "Delete a button",
+          "add_button": "Add buttons",
+          "delete_button": "Delete buttons",
           "settings": "Transmitter settings"
         }
       },
       "add_button": {
-        "title": "Add a button",
-        "description": "The new button becomes the learning target. Turn on Learning mode and press the remote key.",
+        "title": "Add buttons",
+        "description": "Enter one button name per line (or separate with commas). The first one becomes the learning target.",
         "data": {
-          "name": "Button name"
+          "names": "Button names (one per line)"
         }
       },
       "delete_button": {
-        "title": "Delete a button",
+        "title": "Delete buttons",
+        "description": "Select multiple buttons; their entities will be removed from the integration as well.",
         "data": {
-          "name": "Select button"
+          "names": "Buttons to delete (multiple)"
         }
       },
       "settings": {
@@ -60,11 +61,15 @@
   "services": {
     "add_button": {
       "name": "Add button",
-      "description": "Create an empty button and set it as the learning target.",
+      "description": "Create one or more empty buttons; the first one becomes the learning target.",
       "fields": {
         "name": {
-          "name": "Button name",
+          "name": "Button name (single, legacy)",
           "description": "For example: TV-Power"
+        },
+        "names": {
+          "name": "Button names",
+          "description": "For example: TV-Power, TV-Volume+; use either this or name"
         },
         "config_entry_id": {
           "name": "Integration instance",
@@ -74,11 +79,15 @@
     },
     "delete_button": {
       "name": "Delete button",
-      "description": "Delete a configured button by name.",
+      "description": "Delete one or more configured buttons and remove their entities.",
       "fields": {
         "name": {
-          "name": "Button name",
+          "name": "Button name (single, legacy)",
           "description": "For example: TV-Power"
+        },
+        "names": {
+          "name": "Button names",
+          "description": "For example: TV-Power, TV-Volume+; use either this or name"
         },
         "config_entry_id": {
           "name": "Integration instance",

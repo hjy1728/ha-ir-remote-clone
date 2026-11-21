@@ -6,10 +6,18 @@ add_button:
       selector:
         text:
     name:
-      required: true
+      required: false
       example: "电视-电源"
+      description: "单个按键名称（兼容旧用法）"
       selector:
         text:
+    names:
+      required: false
+      example: ["电视-电源", "电视-音量+", "空调-开关"]
+      description: "一次添加多个按键名称"
+      selector:
+        text:
+          multiple: true
 
 delete_button:
   fields:
@@ -19,10 +27,18 @@ delete_button:
       selector:
         text:
     name:
-      required: true
+      required: false
       example: "电视-电源"
+      description: "单个按键名称（兼容旧用法）"
       selector:
         text:
+    names:
+      required: false
+      example: ["电视-电源", "电视-音量+"]
+      description: "一次删除多个按键，实体会同步移除"
+      selector:
+        text:
+          multiple: true
 
 send_button:
   fields:

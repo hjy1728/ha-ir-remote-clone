@@ -28,6 +28,7 @@ SERVICE_CLEAR_BUFFER = "clear_buffer"
 SERVICE_RECEIVE_CODE = "receive_code"
 
 ATTR_NAME = "name"
+ATTR_NAMES = "names"
 ATTR_CODE = "code"
 ATTR_REPEATS = "repeats"
 ATTR_PULSES = "pulses"

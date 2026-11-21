@@ -11,10 +11,10 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
-from homeassistant.helpers import selector
+from homeassistant.helpers import config_validation as cv, selector
 
 from .const import (
-    ATTR_NAME,
+    ATTR_NAMES,
     CONF_CODE_SENSOR,
     CONF_ESPHOME_NODE,
     CONF_PROTOCOL,
@@ -24,7 +24,7 @@ from .const import (
     DOMAIN,
     PROTOCOLS,
 )
-from .manager import IRButtonManager
+from .manager import IRButtonManager, parse_names
 
 USER_SCHEMA = vol.Schema(
     {
@@ -96,16 +96,22 @@ class IRLearnOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            name = str(user_input[ATTR_NAME]).strip()
-            if not name:
-                errors[ATTR_NAME] = "empty_name"
-            elif not await self._manager().async_add_button(name):
-                errors[ATTR_NAME] = "exists"
+            names = parse_names(user_input.get(ATTR_NAMES, ""))
+            if not names:
+                errors[ATTR_NAMES] = "empty_name"
+            elif not await self._manager().async_add_buttons(names):
+                errors[ATTR_NAMES] = "exists"
             else:
                 return self.async_create_entry(title="", data={})
         return self.async_show_form(
             step_id="add_button",
-            data_schema=vol.Schema({vol.Required(ATTR_NAME): str}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(ATTR_NAMES): selector.TextSelector(
+                        selector.TextSelectorConfig(multiline=True)
+                    )
+                }
+            ),
             errors=errors,
         )
 
@@ -116,12 +122,19 @@ class IRLearnOptionsFlow(OptionsFlow):
         if not names:
             return self.async_abort(reason="no_buttons")
         if user_input is not None:
-            if not await self._manager().async_delete_button(user_input[ATTR_NAME]):
+            selected = cv.ensure_list(user_input.get(ATTR_NAMES, []))
+            if not await self._manager().async_delete_buttons(selected):
                 return self.async_abort(reason="not_found")
             return self.async_create_entry(title="", data={})
         return self.async_show_form(
             step_id="delete_button",
-            data_schema=vol.Schema({vol.Required(ATTR_NAME): vol.In(names)}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(ATTR_NAMES): selector.SelectSelector(
+                        selector.SelectSelectorConfig(options=names, multiple=True)
+                    )
+                }
+            ),
         )
 
     async def async_step_settings(

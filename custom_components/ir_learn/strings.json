@@ -21,22 +21,23 @@
         "title": "管理红外按键",
         "description": "选择要进行的操作",
         "menu_options": {
-          "add_button": "添加按键",
-          "delete_button": "删除按键",
+          "add_button": "批量添加按键",
+          "delete_button": "批量删除按键",
           "settings": "发射设置"
         }
       },
       "add_button": {
-        "title": "添加按键",
-        "description": "添加后会自动设为学习目标，然后打开“学习模式”并按遥控器按键。",
+        "title": "批量添加按键",
+        "description": "每行输入一个按键名称，也可用逗号分隔；添加后第一个按键会自动设为学习目标。",
         "data": {
-          "name": "按键名称"
+          "names": "按键名称（多个）"
         }
       },
       "delete_button": {
-        "title": "删除按键",
+        "title": "批量删除按键",
+        "description": "可同时选择多个按键；删除后对应实体会从集成中一并移除。",
         "data": {
-          "name": "选择按键"
+          "names": "选择要删除的按键（可多选）"
         }
       },
       "settings": {
@@ -60,11 +61,15 @@
   "services": {
     "add_button": {
       "name": "添加按键",
-      "description": "新建一个空按键，并自动设为学习目标。",
+      "description": "一次新建一个或多个空按键，并自动把第一个设为学习目标。",
       "fields": {
         "name": {
-          "name": "按键名称",
+          "name": "按键名称（单个，兼容旧用法）",
           "description": "例如：电视-电源"
+        },
+        "names": {
+          "name": "按键名称列表",
+          "description": "例如：电视-电源、电视-音量+；与 name 二选一"
         },
         "config_entry_id": {
           "name": "集成实例",
@@ -74,11 +79,15 @@
     },
     "delete_button": {
       "name": "删除按键",
-      "description": "按名称删除一个已配置的按键。",
+      "description": "按名称一次删除一个或多个按键，并同步移除它们的实体。",
       "fields": {
         "name": {
-          "name": "按键名称",
+          "name": "按键名称（单个，兼容旧用法）",
           "description": "例如：电视-电源"
+        },
+        "names": {
+          "name": "按键名称列表",
+          "description": "例如：电视-电源、电视-音量+；与 name 二选一"
         },
         "config_entry_id": {
           "name": "集成实例",

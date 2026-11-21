@@ -17,6 +17,7 @@ try:
     from homeassistant.helpers.device_registry import DeviceInfo
 except ImportError:  # HA < 2022.6
     from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 from homeassistant.util import slugify
@@ -62,6 +63,15 @@ def _parse_summary(state: str) -> tuple[int, int, str]:
     if re.match(r"^0000\s+[0-9A-Fa-f]{4}\s+[0-9A-Fa-f]{4}\s+", state):
         return repeats, pulses, "pronto:" + state
     return repeats, pulses, state
+
+
+def parse_names(value: str) -> list[str]:
+    """Split a textarea of names by newline or common separators."""
+    return [
+        part.strip()
+        for part in re.split(r"[\n,，、]+", str(value or ""))
+        if part.strip()
+    ]
 
 
 def _pronto_pulse_count(code: str) -> int:
@@ -151,6 +161,9 @@ class IRButtonManager:
         self.learning = False
         self._listeners: list[Callable[[], None]] = []
         self._new_button_callbacks: list[Callable[[dict[str, Any]], None]] = []
+        self._deleted_button_callbacks: list[
+            Callable[[list[dict[str, Any]]], None]
+        ] = []
         self._unsub_state: Callable[[], None] | None = None
         self._last_seen_code = ""
         self._last_seen_ts = 0.0
@@ -239,6 +252,12 @@ class IRButtonManager:
         self, callback_: Callable[[dict[str, Any]], None]
     ) -> None:
         self._new_button_callbacks.append(callback_)
+
+    @callback
+    def register_deleted_buttons_callback(
+        self, callback_: Callable[[list[dict[str, Any]]], None]
+    ) -> None:
+        self._deleted_button_callbacks.append(callback_)
 
     @callback
     def _notify(self) -> None:
@@ -366,32 +385,73 @@ class IRButtonManager:
         self._notify()
         self.hass.async_create_task(self._async_persist())
 
-    async def async_add_button(self, name: str) -> bool:
-        name = name.strip()
-        if not name or any(b["name"] == name for b in self.buttons):
-            return False
-        button: dict[str, Any] = {
-            "id": uuid.uuid4().hex[:8],
-            "name": name,
-            "code": "",
-        }
-        self.buttons.append(button)
-        self.target_id = button["id"]
+    async def async_add_buttons(self, names: list[str]) -> list[dict[str, Any]]:
+        """Add several buttons at once and return the ones actually created."""
+        created: list[dict[str, Any]] = []
+        known = {str(button["name"]) for button in self.buttons}
+        for raw_name in names:
+            name = str(raw_name).strip()
+            if not name or name in known:
+                continue
+            button: dict[str, Any] = {
+                "id": uuid.uuid4().hex[:8],
+                "name": name,
+                "code": "",
+            }
+            self.buttons.append(button)
+            known.add(name)
+            created.append(button)
+        if not created:
+            return []
+        self.target_id = created[0]["id"]
         self.buffer = ""
         await self._async_persist()
         for add in list(self._new_button_callbacks):
-            add(button)
-        return True
+            for button in created:
+                add(button)
+        return created
+
+    async def async_add_button(self, name: str) -> bool:
+        return bool(await self.async_add_buttons([name]))
+
+    def _async_remove_button_entities(self, buttons: list[dict[str, Any]]) -> None:
+        """Remove entity registry entries so deleted buttons vanish from the UI."""
+        unique_ids = {
+            f"{self.entry.entry_id}_send_{button['id']}" for button in buttons
+        }
+        if not unique_ids:
+            return
+        # 直接按 unique_id 匹配，避开不同 HA 版本 async_get_entity_id 参数顺序差异。
+        registry = er.async_get(self.hass)
+        for entity_id, entry in list(registry.entities.items()):
+            if entry.platform == DOMAIN and entry.unique_id in unique_ids:
+                registry.async_remove(entity_id)
+
+    async def async_delete_buttons(self, names: list[str]) -> list[dict[str, Any]]:
+        """Delete several buttons together with their Home Assistant entities."""
+        requested = {str(name).strip() for name in names}
+        requested.discard("")
+        ids = {
+            str(button["id"])
+            for button in self.buttons
+            if str(button["name"]) in requested or str(button["id"]) in requested
+        }
+        if not ids:
+            return []
+        deleted = [button for button in self.buttons if button["id"] in ids]
+        self.buttons = [button for button in self.buttons if button["id"] not in ids]
+        if not any(button["id"] == self.target_id for button in self.buttons):
+            self.target_id = self.buttons[0]["id"] if self.buttons else None
+        # 只调用实体的 async_remove() 会留下注册表条目（状态变成 unavailable），
+        # 集成页面仍会显示；必须删掉注册表条目，实体才会真正消失。
+        self._async_remove_button_entities(deleted)
+        await self._async_persist()
+        for remove in list(self._deleted_button_callbacks):
+            remove(deleted)
+        return deleted
 
     async def async_delete_button(self, name: str) -> bool:
-        before = len(self.buttons)
-        self.buttons = [b for b in self.buttons if b["name"] != name]
-        if len(self.buttons) == before:
-            return False
-        if not any(b["id"] == self.target_id for b in self.buttons):
-            self.target_id = self.buttons[0]["id"] if self.buttons else None
-        await self._async_persist()
-        return True
+        return bool(await self.async_delete_buttons([name]))
 
     async def async_set_target(self, name: str) -> bool:
         for button in self.buttons:

@@ -303,7 +303,7 @@ text_sensor:
 
 ### 学习一个新按键（完整流程）
 
-1. **新建按键**：集成选项 →「添加按键」→ 输入名称（如「投影开关」）。新按键自动成为「目标按键」。
+1. **新建按键**：集成选项 →「批量添加按键」→ 每行输入一个名称（如「投影开关」，也可用逗号分隔），可一次建多个；第一个按键自动成为「目标按键」。
    - 已存在的按键不用重复新建，直接用「目标按键」下拉框选中它即可。
 2. **开学习**：打开「学习模式」开关。
 3. **按遥控**：遥控器对准接收头按一下。成功时：
@@ -323,7 +323,7 @@ text_sensor:
 
 ### 删除按键
 
-集成选项 →「删除按键」→ 选择名称。对应的「发送-xxx」按钮会一并移除。
+集成选项 →「批量删除按键」→ 可多选要删除的按键。确认后对应的「发送-xxx」实体会从集成中直接消失（不只是变成不可用）。
 
 ### 手动录入现成 Pronto 码
 
@@ -351,12 +351,22 @@ target:
   entity_id: button.hong_wai_xue_xi_an_jian_fa_song_tou_ying_kai_guan
 ```
 
+一次添加多个按键（删除时把 `add_button` 换成 `delete_button` 即可）：
+
+```yaml
+action: ir_learn.add_button
+data:
+  names:
+    - 电视-电源
+    - 电视-音量+
+```
+
 ### 服务参考
 
 | 服务 | 参数 | 说明 |
 |---|---|---|
-| `ir_learn.add_button` | `name` | 新建空按键并设为目标 |
-| `ir_learn.delete_button` | `name` | 删除按键 |
+| `ir_learn.add_button` | `name` 或 `names` | 新建空按键并设为目标，支持一次多个 |
+| `ir_learn.delete_button` | `name` 或 `names` | 删除按键（支持一次多个，实体同步移除） |
 | `ir_learn.send_button` | `name` | 按名称发射 |
 | `ir_learn.clear_buffer` | — | 清空暂存码 |
 | `ir_learn.receive_code` | `code`, `repeats?`, `pulses?` | 把码推入集成（ESPHome 内部自动调用，也可手动录入） |
